@@ -1,8 +1,8 @@
 import cheerio from 'cheerio'
-import _ from 'lodash'
 
 import { makeRequest } from './MakeRequest'
 import { config } from './config'
+import { ToolKit } from './utils'
 import type { NumberOrNull, StringOrNull } from './const/types'
 
 interface Anime {
@@ -17,47 +17,39 @@ interface Anime {
 
 type ReturnType = Promise<Anime[] | null>
 
-async function parseAnimeElement(element: cheerio.Element): Promise<Anime> {
-  const $ = cheerio.load(element)
-
-  const title = $('.anime__item .anime__item__text h5 a').text().trim() ?? null
-  const slug = _.split($('.anime__item a:nth(0)').attr('href'), '/').filter(Boolean).pop() ?? null
-  const image = $('.anime__item .anime__item__pic').attr('data-setbg') ?? null
-  const synopsis = null
-  const episodes = null
-  const type = $('.anime__item__text ul li.anime').text().trim() ?? null
-  const status = $('.anime__item__text ul li').first().text().trim() ?? null
-
-  return {
-    slug,
-    title,
-    synopsis,
-    episodes,
-    image,
-    type,
-    status,
-  }
-}
-
 async function latestAnimeAdded(): ReturnType {
-  const requestOpts: Record<string, any> = {
-    path: config.baseURL,
-    responseType: 'text',
-  }
-  const response = await makeRequest(requestOpts.path, requestOpts.responseType as never, { method: 'get' })
+  const response = await makeRequest(config.baseURL, 'text', { method: 'get' })
   if (!response)
     return null
 
   const $ = cheerio.load(response)
 
-  const animeElements = $('div.trending__anime div:nth-child(1)').toArray()
+  // "Animes recientes" lives in the single `.row.mode3` block on the home page.
+  const elements = $('.row.mode3 .p-3.d-flex').toArray()
 
-  const animeData = _.chain(animeElements)
-    .filter((_, index) => index % 2 !== 0)
-    .map(parseAnimeElement)
-    .thru(promises => Promise.all(promises))
-    .value()
-    .then(response => _.filter(response, (anime: Anime) => anime.slug !== null))
+  const animeData: Anime[] = elements.map((element) => {
+    const $el = $(element)
+
+    const link = $el.find('.custom_thumb_home a').attr('href') ?? $el.find('.card-title a').attr('href')
+    const slug = ToolKit.slugFromUrl(link)
+    const title = $el.find('.card-body-home .card-title a').text().trim() || null
+    const image = $el.find('.custom_thumb_home img').attr('src') ?? null
+
+    // `.card-info` holds two badges: status first (En emision/Concluido), type second (ONA/OVA/...).
+    const badges = $el.find('.card-info .badge')
+    const status = badges.eq(0).text().trim() || null
+    const type = badges.eq(1).text().trim() || null
+
+    return {
+      slug,
+      title,
+      synopsis: null,
+      episodes: null,
+      image,
+      type,
+      status,
+    }
+  }).filter(anime => anime.slug !== null)
 
   return animeData
 }

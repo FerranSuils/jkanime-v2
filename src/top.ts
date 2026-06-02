@@ -1,5 +1,5 @@
 import cheerio from 'cheerio'
-import _ from 'lodash'
+
 import { makeRequest } from './MakeRequest'
 import { config } from './config'
 import { ToolKit } from './utils'
@@ -7,6 +7,7 @@ import type { NumberOrNull, StringOrNull } from './const/types'
 
 interface Anime {
   id: StringOrNull
+  rank: NumberOrNull
   slug: StringOrNull
   title: StringOrNull
   synopsis: StringOrNull
@@ -24,56 +25,41 @@ type ReturnType = Promise<Anime[] | null>
 const DEFAULT_ACTUAL_SEASON: SeasonType = 'Temporada Actual'
 
 async function top(season: SeasonType, year: YearType): ReturnType {
-  let requestOpts: Record<string, any> = {}
+  const path = season === DEFAULT_ACTUAL_SEASON
+    ? `${config.baseURL}top`
+    : `${config.baseURL}top?${ToolKit.buildQuery({ temporada: season, fecha: year })}`
 
-  if (season === DEFAULT_ACTUAL_SEASON) {
-    requestOpts = {
-      path: `${config.baseURL}top`,
-      responseType: 'text',
-    }
-  }
-  else {
-    requestOpts = {
-      path: `${config.baseURL}top?${ToolKit.buildQuery({ temporada: season, fecha: year })}`,
-      responseType: 'text',
-    }
-  }
-
-  const response = await makeRequest(requestOpts.path, requestOpts.responseType as never, { method: 'get' })
+  const response = await makeRequest(path, 'text', { method: 'get' })
   if (!response)
     return null
 
   const $ = cheerio.load(response)
 
-  const animeElements = $('div.list').toArray()
+  const elements = $('.col.toplist').toArray()
 
-  const animePromises = _.map(animeElements, parseAnimeElement)
+  const animeData: Anime[] = elements.map((element) => {
+    const $el = $(element)
 
-  const animeData = await Promise.all(animePromises)
+    const link = $el.find('a').attr('href')
+    const slug = ToolKit.slugFromUrl(link)
+    const title = $el.find('.card-title').text().trim() || $el.find('img').attr('alt') || null
+    const image = $el.find('img').attr('src') ?? null
+    const synopsis = $el.find('.card-synopsis').text().trim() || null
+    const rank = ToolKit.extractNumberFromString($el.find('.ranking').attr('data-rank') ?? $el.find('.ranking').text())
+
+    return {
+      id: null,
+      rank,
+      slug,
+      title,
+      synopsis,
+      episodes: null,
+      image,
+      type: null,
+    }
+  }).filter(anime => anime.slug !== null)
 
   return animeData
-}
-
-async function parseAnimeElement(element: cheerio.Element): Promise<Anime> {
-  const $ = cheerio.load(element)
-
-  const id = null
-  const title = $('h2.portada-title a').attr('title') ?? null
-  const slug = _.split($('h2.portada-title a').attr('href'), '/').filter(Boolean).pop() ?? null
-  const image = $('.timg img').attr('src') ?? null
-  const synopsis = $('div#animinfo p').text().trim() ?? null
-  const type = $('span.title').text() ? _.trim(_.first(_.split($('span.title').text(), '/'))) : null
-  const episodes = ToolKit.extractNumberFromString($('span.title').text()) ?? null
-
-  return {
-    id,
-    slug,
-    title,
-    synopsis,
-    episodes,
-    image,
-    type,
-  }
 }
 
 export default top

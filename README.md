@@ -67,6 +67,9 @@ const response = await filter({
   },
 })
 ```
+
+> **Note:** `filter` walks **every** page of the filtered result (30 items per directory page) and is capped at 50 pages (`MAX_PAGES`) as a safety limit. `episodes` is now `null` — jkanime's directory listing no longer exposes per-anime episode counts.
+
 ```json
 [
   {
@@ -75,7 +78,7 @@ const response = await filter({
     "image": "https://cdn.jkdesu.com/assets/images/animes/image/kaijuu-8-gou.jpg",
     "synopsis": "Unos monstruos grotescos parecidos a Godzilla llamados \"kaijuu\" llevan muchos años apareciendo por Japón. Para combatir a estas bestias, una unidad militar de élite conocida como Cuerpo de Defensa arriesga su vida a diario para proteger a los civiles. Una vez que se mata a una criatura, los \"barrenderos\" -que trabajan bajo las órdenes de la Corporación Profesional de Limpieza de Kaijuu- se encargan de deshacerse de sus restos.\n\nKafka Hibino, un hombre de 32 años, no está satisfecho con su trabajo de barrendero. Desde muy joven ha aspirado a unirse al Cuerpo de Defensa y ganarse la vida matando kaijuus. Sin embargo, tras varios intentos fallidos, renunció a sus sueños y se resignó a la mediocridad que le proporcionaba un sueldo decente. Sin embargo, cuando un ambicioso recluta de 18 años llamado Leno Ichikawa se une a su equipo de limpieza, Kafka vuelve a recordar su deseo de alistarse en el ejército.\n\nTras una cadena de desafortunados acontecimientos y una interacción con el barrendero junior, Kafka se encuentra con un kaijuu de tipo parásito que se abre paso a través de su boca, convirtiéndolo en un monstruo humanoide. Con sus nuevos poderes, Kafka se propone dar una última oportunidad al sueño de su vida.",
     "type": "Anime",
-    "episodes": "? Ep"
+    "episodes": null
   },
   {
     "title": "Kuramerukagari",
@@ -83,7 +86,7 @@ const response = await filter({
     "image": "https://cdn.jkdesu.com/assets/images/animes/image/kuramerukagari.jpg",
     "synopsis": "Esta es una historia que une a personas y un pueblo. Una ciudad minera de carbón repleta de excavadoras de pequeña escala, comúnmente conocidas como \"Hakoniwa\". En este pueblo que cambia a diario como un laberinto, hay una chica llamada Kagari que dirige un negocio de elaboración de mapas y un chico llamado Yuya que sueña con liberarse de los \"Hakoniwa\". Finalmente, los dos, junto con los singulares residentes del pueblo, se enfrentan a una conspiración que sacude a todo el pueblo. El destino del “Hakoniwa” depende de los dibujos de Kagari en el mapa.",
     "type": "Pelicula",
-    "episodes": "1 Ep"
+    "episodes": null
   }
   // ...
 ]
@@ -200,6 +203,8 @@ const response = await getExtraInfo(animeSlug)
 ## `async function top(season: SeasonType, year: YearType): Promise<Anime[] | null>`
 *Important: If the ***Temporada Actual*** option is selected the year option will be omitted in the request.*
 
+*Each entry now includes a `rank` field (its position in the ranking). `type` and `episodes` are no longer exposed on this page and return `null`.*
+
 | SeasonType |      | YearType |      |
 |------------|------|----------|------|
 | Option     |      | Option   |      |
@@ -219,21 +224,26 @@ const response = await top(season, year)
 [
   {
     "id": null,
-    "slug": "shingeki-no-kyojin-the-final-season",
-    "title": "Shingeki no Kyojin: The Final Season",
-    "synopsis": "Con Eren y compañía ahora en la costa y la amenaza de Marley acechando, ¿que sigue para los Scouts y su búsqueda para desentrañar los misterios de los Titanes, la humanidad y mas?",
-    "episodes": 16,
-    "image": "https://cdn.jkdesu.com/assets/images/animes/image/shingeki-no-kyojin-the-final-season.jpg",
-    "type": "Serie"
+    "rank": 1,
+    "slug": "overflow",
+    "title": "Overflow",
+    "synopsis": "\"Hermano, ¿realmente nos estamos bañando juntos?\"\nY así, comenzó una experiencia de baño prohibida.",
+    "episodes": null,
+    "image": "https://cdn.jkdesa.com/assets/images/animes/image/overflow.jpg",
+    "type": null
   } // ...
 ]
 ```
 
 ## `async function search(q: string): Promise<SearchResults | null>`
+Searches the catalog through jkanime's `ajax_search` endpoint (a Laravel CSRF-protected `POST`, handled internally).
+
 ```ts
 const q = 'tokyo ghoul'
 const response = await search(q)
 ```
+
+> **Note:** the response shape changed with jkanime's redesign. It is now `{ animes: Anime[] }`, where each `Anime` has `id`, `slug`, `title`, `type`, `status`, `image` and `thumbnail`. The previous `anime_types` map and the per-anime `altertitles`, `synopsis`, `episodes`, `rel_id` and `coincidencias` fields are no longer provided by the source.
 
 ```json
 {
@@ -242,46 +252,22 @@ const response = await search(q)
       "id": "1183",
       "slug": "tokyo-ghoul",
       "title": "Tokyo Ghoul",
-      "altertitles": [
-        {
-          "language": "Ingles",
-          "title": " Tokyo Ghoul"
-        },
-        {
-          "language": "Sinonimos",
-          "title": " Tokyo Kushu, Toukyou Kushu, Toukyou Ghoul"
-        },
-        {
-          "language": "Japones",
-          "title": " 東京喰種-トーキョーグール-"
-        }
-      ],
-      "synopsis": "En Tokyo ocurren asesinatos misteriosos cometidos por Ghouls, seres desconocidos que comen carne humana, un día Kaneki Ken un joven de 18 años que cursa la Universidad conoce a una chica en un restaurante y la invita a salir, pero luego se da cuenta que ella es un Ghoul y sufre un ataque de parte de ella, pero afortunadamente sobrevive y la muchacha muere; debido a sus heridas los médicos le hacen un transplante de riñon sin saber que la muchacha era una Ghoul y Kaneki termina convirtiéndose en un ser híbrido humano-ghoul y de ahora en adelante deberá vivir escondiéndose de los humanos.",
-      "status": "finished",
-      "episodes": "12",
-      "image": "https://cdn.jkdesu.com/assets/images/animes/image/tokyo-ghoul.jpg",
-      "thumbnail": "https://cdn.jkdesu.com/assets/images/animes/thumbnail/tokyo-ghoul.jpg",
-      "type": "TV",
-      "rel_id": {
-        "Sequel": [
-          "1413"
-        ],
-        "Side story": [
-          "1686",
-          "1720"
-        ]
-      },
-      "coincidencias": "2"
-    } // ...
-  ],
-  "anime_types": {
-    "TV": "Serie",
-    "OVA": "OVA",
-    "Movie": "Pelicula",
-    "Special": "Especial",
-    "ONA": "ONA",
-    "Music": "Musical"
-  }
+      "type": "Serie",
+      "status": "Concluido",
+      "image": "https://cdn.jkdesa.com/assets/images/animes/image/tokyo-ghoul.jpg",
+      "thumbnail": "https://cdn.jkdesa.com/assets/images/animes/thumbnail/tokyo-ghoul.jpg"
+    },
+    {
+      "id": "1413",
+      "slug": "tokyo-ghoul-2",
+      "title": "Tokyo Ghoul √A",
+      "type": "Serie",
+      "status": "Concluido",
+      "image": "https://cdn.jkdesa.com/assets/images/animes/image/tokyo-ghoul-2.jpg",
+      "thumbnail": "https://cdn.jkdesa.com/assets/images/animes/thumbnail/tokyo-ghoul-2.jpg"
+    }
+    // ...
+  ]
 }
 ```
 
@@ -371,6 +357,31 @@ const response = await schedule()
       }
     ]
   } // ...
+]
+```
+
+## `async function getAnimeDirectory(page?: number | string): Promise<Anime[] | null>`
+Returns one page of the full anime directory (30 items per page, ~157 pages). Defaults to page `1`.
+
+```ts
+const response = await getAnimeDirectory(1)
+```
+
+> **Note:** the directory grid is client-rendered from an embedded Laravel paginator, so the data is read from that payload. `amountEpisodes` and `startedEmision` are `null` because the source no longer exposes them in the directory.
+
+```json
+[
+  {
+    "title": "Isekai no Sata wa Shachiku Shidai: Omoi wo Hasemashita",
+    "slug": "isekai-no-sata-wa-shachiku-shidai-omoi-wo-hasemashita",
+    "amountEpisodes": null,
+    "startedEmision": null,
+    "statusEmision": "Concluido",
+    "type": "Especial",
+    "synopsis": "Episodio especial incluido en el volumen 3 en Blu-ray y DVD de Isekai no Sata wa Shachiku Shidai",
+    "image": "https://cdn.jkdesa.com/assets/images/animes/image/isekai-no-sata-wa-shachiku-shidai-omoi-wo-hasemashita.jpg"
+  }
+  // ...
 ]
 ```
 

@@ -1,12 +1,10 @@
 import _ from 'lodash'
-import cheerio from 'cheerio'
 
 import { makeRequest } from './MakeRequest'
 import { config } from './config'
+import { ToolKit } from './utils'
 import type { StringOrNull } from './const/types'
 import { CATEGORY_MAP, DEMOGRAPHY_MAP, GENRE_MAP, ORDERBY_MAP, SEASON_MAP, STATE_MAP, TYPES_MAP, YEAR_MAP } from './const/filterOptions'
-
-const { first, intersection, isEmpty, join, size, split, compact, map, pickBy, identity } = _
 
 interface AnimeInfo {
   slug: StringOrNull
@@ -43,157 +41,70 @@ interface FilterProps {
 
 type ReturnType = Promise<AnimeInfo[] | null>
 
-function buildPath(array: any) {
-  if (size(array) === 1)
-    return join(array)
+// The full directorio is ~157 pages; real filtered queries return far fewer.
+// This caps unbounded crawling when little/no filter is provided.
+const MAX_PAGES = 50
 
-  return join(array, '/')
-}
+// Maps the public filter keys to jkanime's `/directorio` query params, keeping
+// only values that are valid according to each option map.
+function buildFilterQuery(filter: Filter | undefined): Record<string, string> {
+  const definitions: { key: keyof Filter, param: string, allowed: readonly string[] }[] = [
+    { key: 'genre', param: 'genero', allowed: GENRE_MAP },
+    { key: 'demography', param: 'demografia', allowed: DEMOGRAPHY_MAP },
+    { key: 'category', param: 'categoria', allowed: CATEGORY_MAP },
+    { key: 'type', param: 'tipo', allowed: TYPES_MAP },
+    { key: 'state', param: 'estado', allowed: STATE_MAP },
+    { key: 'year', param: 'fecha', allowed: YEAR_MAP },
+    { key: 'season', param: 'temporada', allowed: SEASON_MAP },
+    { key: 'orderBy', param: 'orden', allowed: ORDERBY_MAP },
+  ]
 
-function getGenre(value: string): any {
-  if (!isEmpty(value)) {
-    const result = intersection(GENRE_MAP, [value])
-
-    return result
+  const query: Record<string, string> = {}
+  for (const { key, param, allowed } of definitions) {
+    const value = filter?.[key]
+    if (value && allowed.includes(value as never))
+      query[param] = value as string
   }
-
-  return []
+  return query
 }
 
-function getDemography(value: string): any {
-  if (!isEmpty(value)) {
-    const result = intersection(DEMOGRAPHY_MAP, [value])
-    return result
+function mapAnime(item: Record<string, any>): AnimeInfo {
+  return {
+    slug: item.slug ?? null,
+    title: item.title ?? null,
+    synopsis: item.synopsis ?? null,
+    episodes: null,
+    image: item.image ?? null,
+    type: item.tipo ?? item.type ?? null,
   }
-
-  return []
-}
-
-function getCategory(value: string): any {
-  if (!isEmpty(value)) {
-    const result = intersection(CATEGORY_MAP, [value])
-    return result
-  }
-
-  return []
-}
-
-function getType(value: string): any {
-  if (!isEmpty(value)) {
-    const result = intersection(TYPES_MAP, [value])
-    return result
-  }
-
-  return []
-}
-
-function getState(value: string): any {
-  if (!isEmpty(value)) {
-    const result = intersection(STATE_MAP, [value])
-    return result
-  }
-
-  return []
-}
-
-function getYear(value: string): any {
-  if (!isEmpty(value)) {
-    const result = intersection(YEAR_MAP, [value])
-    return result
-  }
-
-  return []
-}
-
-function getSeason(value: string): any {
-  if (!isEmpty(value)) {
-    const result = intersection(SEASON_MAP, [value])
-    return result
-  }
-
-  return []
-}
-
-function getOrderBy(value: string): any {
-  if (!isEmpty(value)) {
-    const result = intersection(ORDERBY_MAP, [value])
-    return result
-  }
-
-  return []
-}
-
-function applyFilter(filter: Filter | undefined) {
-  const filterFunctions: { [key in keyof Filter]: (value: string) => string[] } = {
-    genre: getGenre,
-    demography: getDemography,
-    category: getCategory,
-    type: getType,
-    state: getState,
-    year: getYear,
-    season: getSeason,
-    orderBy: getOrderBy,
-  }
-
-  const filteredFilter = pickBy(filter, identity)
-
-  const fullPath = map(filteredFilter, (value, key) => {
-    const filterFunction = filterFunctions[key as keyof Filter]
-    if (filterFunction && value) {
-      const result = buildPath(filterFunction(value))
-      return result
-    }
-  })
-
-  return compact(fullPath).join('/')
-}
-
-function extractAnimeInfo($: cheerio.Root): AnimeInfo[] {
-  const animeItems = $('.row .page_directorio')
-
-  const animeInfoList: AnimeInfo[] = []
-
-  animeItems.find('.card').each((index, element) => {
-    const $el = $(element)
-
-    const episodes: StringOrNull = $el.find('.card-body p').text() ? first(split($el.find('.card-body p').text(), ',')) as string : null
-
-    const animeInfo: AnimeInfo = {
-      title: $el.find('.card-title a').attr('title') ?? null,
-      slug: split($el.find('.card-title a').attr('href'), '/').filter(Boolean).pop() ?? null,
-      image: $el.find('.img-fluid').attr('src') ?? null,
-      synopsis: $el.find('.synopsis').text().trim() ?? null,
-      type: $el.find('p.card-txt').text().trim() ?? null,
-      episodes,
-    }
-
-    animeInfoList.push(animeInfo)
-  })
-
-  return animeInfoList
-}
-
-function extractNextPageLink($: cheerio.Root): string | null {
-  const nextPageLink = $('.text.nav-next').attr('href')
-  return nextPageLink ?? null
 }
 
 async function requestFilter({ query }: FilterProps): ReturnType {
+  const baseQuery = ToolKit.buildQuery(buildFilterQuery(query))
+  const separator = baseQuery ? '&' : ''
   const allAnimeInfo: AnimeInfo[] = []
-  const appliedFilter = applyFilter(query)
 
-  let nextPageLink: string | null = `${config.baseURL}directorio/${appliedFilter}`
+  let page = 1
+  let lastPage = 1
 
-  while (nextPageLink) {
+  while (page <= lastPage && page <= MAX_PAGES) {
     try {
-      const response = await makeRequest(nextPageLink, 'text', { method: 'get' })
+      const url = `${config.baseURL}directorio?${baseQuery}${separator}p=${page}`
+      const response = await makeRequest(url, 'text', { method: 'get' })
       if (!response)
-        return null
+        break
 
-      const $ = cheerio.load(response)
-      allAnimeInfo.push(...extractAnimeInfo($))
+      // The directorio grid is client-rendered from an embedded Laravel paginator.
+      const animes = ToolKit.extractEmbeddedJson(response, 'animes')
+      if (!animes || !Array.isArray(animes.data))
+        break
 
-      nextPageLink = extractNextPageLink($)
+      allAnimeInfo.push(...animes.data.map(mapAnime))
+
+      lastPage = _.toNumber(animes.last_page) || 1
+      if (!animes.next_page_url)
+        break
+      page++
     }
     catch (error) {
       console.error('[RequestFilter] Error fetching data:', error)
